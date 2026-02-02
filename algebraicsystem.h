@@ -14,8 +14,8 @@
 
 #pragma once
 
-#include "DiscreteSystem.h"
-#include "Assembler.h"
+#include "discretesystem.h"
+#include "assembler.h"
 #include "typedefs.h"  //Matrix, SparseMatrix, Vector
 #include "MeshDB/mesh.h"
 #include <iostream>

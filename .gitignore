@@ -1,5 +1,49 @@
-﻿################################################################################
-# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
-################################################################################
+# Prerequisites
+*.d
 
-/x64/Debug
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# CMake
+cmake_install.cmake
+CMakeCache.txt
+CMakeFiles/
+Makefile
+build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*~
+*.user
+
+# Project specific
+TransFE

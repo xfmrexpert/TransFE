@@ -18,7 +18,7 @@
 #include "FESpace.h"
 #include "ElementTransform.h"
 #include "IntegrationRule.h"
-#include "Assembler.h"
+#include "assembler.h"
 
 class LinearFormIntegrator
 {

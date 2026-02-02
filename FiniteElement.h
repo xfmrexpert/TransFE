@@ -32,7 +32,7 @@ public:
 
     // Access to shape functions via base class pointers
     virtual const ElementTransform* Transform() const = 0;
-    virtual const ShapeFunction* ShapeFunction() const = 0;
+    virtual const ::ShapeFunction* ShapeFunction() const = 0;
 };
 
 

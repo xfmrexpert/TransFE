@@ -12,6 +12,7 @@
 
 #include <stdexcept>
 #include <ostream>
+#include <cstdint>
 
  /// The point class is a container for 3D (and 2D) spatial coordinates.
 class point {

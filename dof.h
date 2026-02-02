@@ -13,6 +13,7 @@
  ***************************************************************************/
 
 #pragma once
+#include <cstddef>
 
 enum class DOFStatus {
 	Free = 1,

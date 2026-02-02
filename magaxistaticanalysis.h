@@ -14,10 +14,10 @@
 
 #pragma once
 
-#include "FEAnalysis.h"
+#include "feanalysis.h"
 #include "displacementconstraint.h"
-#include "LinearSystemAssembler.h"
-#include "AlgebraicSystem.h"
+#include "linearsystemassembler.h"
+#include "algebraicsystem.h"
 
 class MagAxiStaticAnalysis : public FEAnalysis<double> {
 public:

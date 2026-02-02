@@ -15,6 +15,7 @@
 #include "meshedge.h"
 #include "EdgeUse.h"
 #include <vector>
+#include <cmath>
 
 class MeshEdge;
 class MeshRegion;

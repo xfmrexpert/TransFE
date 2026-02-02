@@ -10,8 +10,8 @@
  
 #pragma once
 
-#include "Constraint.h"
-#include "Assembler.h"
+#include "constraint.h"
+#include "assembler.h"
 #include "BilinearForm.h"
 #include "LinearForm.h"
 #include <list>

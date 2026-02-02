@@ -1,12 +1,24 @@
-cmake_minimum_required(VERSION 3.0.0)
+cmake_minimum_required(VERSION 3.12)
 project(TransFE VERSION 0.1.0)
 
 set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(CTest)
 enable_testing()
 
-add_executable(TransFE main.cpp algebraicsystem.cpp discretesystem.cpp displacementconstraint.cpp dof.cpp elasticityfc.cpp elasticitysc.cpp electrostaticanalysis.cpp electrostaticfc.cpp electrostaticsc.cpp feanalysis.cpp forcecontributor.cpp lin1dsf.cpp linearsystemassembler.cpp linquadsf.cpp lintetsf.cpp lintrisf.cpp magaxistaticanalysis.cpp magaxistaticfc.cpp magaxistaticsc.cpp mapping1d2d.cpp mapping2d.cpp mapping2daxi.cpp mapping3d.cpp quadquadsf.cpp quadtrisf.cpp stiffnesscontributor.cpp MeshDB/geomentity.cpp MeshDB/mesh.cpp MeshDB/meshedge.cpp MeshDB/meshentity.cpp MeshDB/meshface.cpp MeshDB/meshregion.cpp MeshDB/meshvertex.cpp MeshDB/node.cpp)
+# Include the root directory so headers referenced relatively work as expected
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+
+# Automatically gather sources from root and MeshDB
+# CONFIGURE_DEPENDS ensures CMake re-runs if files are added/removed
+file(GLOB ROOT_SOURCES CONFIGURE_DEPENDS "*.cpp")
+file(GLOB MESHDB_SOURCES CONFIGURE_DEPENDS "MeshDB/*.cpp")
+
+# Combine sources, deliberately excluding the "Old" directory
+set(SOURCES ${ROOT_SOURCES} ${MESHDB_SOURCES})
+
+add_executable(TransFE ${SOURCES})
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})

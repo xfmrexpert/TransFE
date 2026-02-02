@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include "Assembler.h"
+#include "assembler.h"
 #include <vector>
 #include <memory>
 #include "dof.h"
