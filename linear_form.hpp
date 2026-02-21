@@ -14,18 +14,37 @@
 
 #pragma once
 
-#include "MeshDB/mesh.h"
-#include "magaxistaticanalysis.h"
-#include <sstream>
+#include <list>
+#include "linear_form_integrator.hpp"
 
-class FEProg {
+namespace TFEM
+{
+	template <typename T>
+	class LinearForm
+	{
+	public:
 
-public:
-	std::unique_ptr<MagAxiStaticAnalysis> theAnalysis;
-	FEProg();
-	~FEProg();
-	std::shared_ptr<Mesh> run_FEA(const std::string& filename, int formulation);
-	/*ostringstream outStream;*/
+		LinearForm(FESpaceBase<T>* fe_space) : fe_space(fe_space) { };
 
-};
-	
+		void addIntegrator(std::unique_ptr<LinearFormIntegrator> integrator)
+		{
+			integrators.push_back(std::move(integrator));
+		}
+
+		void Assemble(Assembler<T>& assem)
+		{
+			for (const auto& entity : fe_space->getMesh()->getEntities())
+			{
+				for (auto& integrator : integrators)
+				{
+					integrator->evaluate(*entity, assem);
+				}
+			}
+		}
+
+	protected:
+		FESpaceBase<T>* fe_space;
+		std::list<std::unique_ptr<LinearFormIntegrator>> integrators;
+
+	};
+}

@@ -329,5 +329,44 @@ namespace TFEM {
         } else {
             throw std::runtime_error("Unsupported Gmsh format version: " + std::to_string(version));
         }
+
+        // Determine mesh dimension based on element types
+        int max_dim = 0;
+        for (auto type : cell_types) {
+            int d = 0;
+            switch(type) {
+                case ElementType::Point: d = 0; break;
+                case ElementType::Segment: d = 1; break;
+                case ElementType::Triangle: 
+                case ElementType::Quad: d = 2; break;
+                case ElementType::Tetrahedron:
+                case ElementType::Hexahedron:
+                case ElementType::Prism:
+                case ElementType::Pyramid: d = 3; break;
+            }
+            if (d > max_dim) max_dim = d;
+        }
+        dim = max_dim; 
+
+        // Determine spatial dimension based on nodal coordinates
+        // Identify if Y or Z are ever non-zero
+        bool has_y = false;
+        bool has_z = false;
+        
+        // Coordinates are stored as x0, y0, z0, x1, y1, z1 ...
+        for (size_t i = 0; i < coordinates.size(); i += 3) {
+            if (std::abs(coordinates[i+1]) > 1e-12) has_y = true;
+            if (std::abs(coordinates[i+2]) > 1e-12) has_z = true;
+            if (has_y && has_z) break; 
+        }
+
+        if (has_z) space_dim = 3;
+        else if (has_y) space_dim = 2;
+        else space_dim = 1;
+
+        // Ensure space_dim is at least dim 
+        // (e.g., a planar mesh in X-Y plane is dim=2, space_dim=2.
+        //  a surface mesh in 3D might be dim=2, space_dim=3)
+        if (space_dim < dim) space_dim = dim;
     }
 }

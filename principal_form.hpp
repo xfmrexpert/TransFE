@@ -13,14 +13,40 @@
  ***************************************************************************/
 
 #pragma once
-#include <vector>
-#include "MeshDB/point.h"
-#include "typedefs.h"
 
-class IntegrationRule {
-public:
-	virtual const std::vector<point>& IntPts() const = 0;
-	virtual const Vector<double>& Weights() const = 0;
-	virtual int numIntPts() const = 0;
+#include <list>
+#include "Mesh/mesh.h"
+#include "form_integrator.hpp"
+#include "fe_space.hpp"
 
-};
+namespace TFEM
+{
+	template <typename T>
+	class PrincipalForm
+	{
+	public:
+		PrincipalForm(FiniteElementSpace* fe_space) : fe_space(fe_space) {}
+
+		void AddDomainIntegrator(std::unique_ptr<FormIntegrator<T>> integrator)
+		{
+			integrators.push_back(std::move(integrator));
+		}
+
+		void Assemble()
+		{
+			for (const auto& cell : fe_space->getMesh()->Cells())
+			{
+				FiniteElementBase fe_space->getFiniteElement();
+				for (auto& integrator : integrators)
+				{
+					integrator->evaluate(*entity);
+				}
+			}
+		}
+
+	protected:
+		FiniteElementSpace* fe_space;
+		std::list<std::unique_ptr<FormIntegrator<T>> integrators;
+
+	};
+}

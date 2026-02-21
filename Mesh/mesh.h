@@ -8,6 +8,7 @@
 #include <cassert>
 #include <string>
 #include <fstream>
+#include "point.h"
 
 namespace TFEM {
 
@@ -41,10 +42,19 @@ namespace TFEM {
         friend class CellIterator;
 
     public:
+        std::vector<int> attributes;
+        std::vector<int> bdr_attributes;
+
         Mesh() = default;
 
         // --- Core API ---
         void Clear();
+
+        // Dimension of the reference space used within the elements
+        int Dimension() const { return dim; }
+
+        // Dimension of the physical space containing the mesh
+        int SpaceDimension() const { return space_dim; }
         
         // Populate the mesh from a GMsh file (format 4.1)
         void ReadGmsh(const std::string& filename);
@@ -59,19 +69,19 @@ namespace TFEM {
         CellAccessor Cells() const;
 
         // --- Queries ---
-        int NumNodes() const { return coordinates.size() / 3; }
+        int NumNodes() const { return node_points.size(); }
         int NumCells() const { return cell_types.size(); }
         int NumEdges() const { return edges.size() / 2; }
         int NumFaces() const { return face_node_offsets.empty() ? 0 : face_node_offsets.size() - 1; }
 
         // Returns {minX, minY, minZ, maxX, maxY, maxZ}
         std::array<double, 6> BoundingBox() const {
-            if (coordinates.empty()) return {0,0,0,0,0,0};
-            double minX = coordinates[0], minY = coordinates[1], minZ = coordinates[2];
+            if (node_points.empty()) return {0,0,0,0,0,0};
+            double minX = node_points[0].x, minY = node_points[0].y, minZ = node_points[0].z;
             double maxX = minX, maxY = minY, maxZ = minZ;
             int n = NumNodes();
             for (int i = 1; i < n; ++i) {
-                double x = coordinates[i*3], y = coordinates[i*3+1], z = coordinates[i*3+2];
+                double x = node_points[i].x, y = node_points[i].y, z = node_points[i].z;
                 if (x < minX) minX = x; if (x > maxX) maxX = x;
                 if (y < minY) minY = y; if (y > maxY) maxY = y;
                 if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
@@ -80,11 +90,13 @@ namespace TFEM {
         }
 
     private:
+        int dim = 3;
+        int space_dim = 3;
         // --- DATA STORAGE (Structure of Arrays) ---
         
         // Geometry
         // Stored as interleaved X, Y, Z. 
-        std::vector<double> coordinates; 
+        std::vector<Point> node_points; 
 
         // Global Topology
         // Edges: Always 2 nodes per edge. Flattened [n1, n2, n1, n2...]
@@ -125,17 +137,6 @@ namespace TFEM {
     // 3. ERGONOMIC VIEWS (The API Layer)
     // =========================================================================
 
-    // A lightweight wrapper for a point in 3D space.
-    struct NodeView {
-        std::span<const double, 3> data;
-
-        double X() const { return data[0]; }
-        double Y() const { return data[1]; }
-        double Z() const { return data[2]; }
-        
-        // Vector arithmetic helpers can be added here
-    };
-
     // The primary interface for your Solvers and Formulations.
     // Created on the stack, discarded immediately. Zero allocation.
     class CellView {
@@ -149,22 +150,25 @@ namespace TFEM {
         ElementType Type() const { return mesh.cell_types[index]; }
         int Attribute() const { return mesh.cell_attributes[index]; }
 
-        std::span<const int> Nodes() const {
+        // Returns the coordinates of the cell's nodes as a vector of points
+        void getNodes(std::vector<Point>& out_nodes) const {
             assert(index >= 0 && index < mesh.NumCells());
             int start = mesh.cell_node_offsets[index];
             int count = mesh.cell_node_offsets[index + 1] - start;
-            assert(start + count <= static_cast<int>(mesh.cell_to_node.size()));
-            return { &mesh.cell_to_node[start], static_cast<size_t>(count) };
+            
+            out_nodes.clear();
+            out_nodes.reserve(count);
+            
+            for (int i = 0; i < count; ++i) {
+                int globalID = mesh.cell_to_node[start + i];
+                out_nodes.push_back(mesh.node_points[globalID]);
+            }
         }
 
-        NodeView Node(int localIndex) const {
-            assert(index >= 0 && index < mesh.NumCells());
-            assert((mesh.cell_node_offsets[index] + localIndex) < static_cast<int>(mesh.cell_to_node.size()));
-
-            int globalID = mesh.cell_to_node[mesh.cell_node_offsets[index] + localIndex];
-            assert(globalID * 3 + 2 < static_cast<int>(mesh.coordinates.size()));
-
-            return NodeView{ std::span<const double, 3>(mesh.coordinates.data() + globalID * 3, 3) };
+        std::vector<Point> Nodes() const {
+             std::vector<Point> pts;
+             getNodes(pts);
+             return pts;
         }
 
         std::span<const int> Edges() const {
@@ -205,13 +209,14 @@ namespace TFEM {
         
         std::array<double, 3> Centroid() const {
             std::array<double, 3> c = {0,0,0};
-            auto nodes = Nodes();
+            std::vector<Point> nodes;
+            getNodes(nodes);
             if (nodes.empty()) return c;
             
-            for(int id : nodes) {
-                c[0] += mesh.coordinates[id*3];
-                c[1] += mesh.coordinates[id*3+1];
-                c[2] += mesh.coordinates[id*3+2];
+            for(Point node : nodes) {
+                c[0] += node.x;
+                c[1] += node.y;
+                c[2] += node.z;
             }
             double scale = 1.0 / nodes.size();
             return {c[0]*scale, c[1]*scale, c[2]*scale};

@@ -13,35 +13,31 @@
  ***************************************************************************/
 
 #pragma once
+#include "finite_element.hpp"
 
-#include <list>
-#include "BilinearFormIntegrator.h"
-
-template <typename T>
-class BilinearForm
+namespace TFEM
 {
-public:
+    /// Nedelec finite element (vector, H(curl) conforming).
+    class NedelecElement : public FiniteElement<NedelecShapeFunction, ElementTransform>
+    {
+    public:
+        NedelecElement(int order, int dim)
+            : m_order(order), m_dim(dim), FiniteElement(dim, dim, order)
+        {
+        }
 
-	BilinearForm(FESpaceBase<T>* fe_space) : fe_space(fe_space) {}
+        virtual ~NedelecElement() = default;
 
-	void addIntegrator(std::unique_ptr<BilinearFormIntegrator<T>> integrator)
-	{
-		integrators.push_back(std::move(integrator));
-	}
+        //int referenceDimension() const override { return m_dim; }
+        //int spatialDimension() const override { return m_dim; }
 
-	void Assemble(Assembler<T>& assem)
-	{
-		for (const auto& entity : fe_space->getMesh()->getEntities())
-		{
-			for (auto& integrator : integrators)
-			{
-				integrator->evaluate(*entity, assem);
-			}
-		}
-	}
+        //int numLocalDOFs() const override {
+        //    // depends on dimension and polynomial order, etc.
+        //    return 3;
+        //}
 
-protected:
-	FESpaceBase<T>* fe_space;
-	std::list<std::unique_ptr<BilinearFormIntegrator<T>>> integrators;
-	
-};
+    private:
+        int m_order;
+        int m_dim;
+    };
+}

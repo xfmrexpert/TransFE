@@ -13,35 +13,27 @@
  ***************************************************************************/
 
 #pragma once
+#include "finite_element.hpp"
+#include "element_transform.hpp"
 
-#include <list>
-#include "LinearFormIntegrator.h"
-
-template <typename T>
-class LinearForm
+namespace TFEM
 {
-public:
+    /// Lagrange finite element (scalar, H^1 conforming).
+    class LagrangeElement : public FiniteElement<LagrangeShapeFunction, ElementTransform>
+    {
+    public:
+        LagrangeElement(size_t dim, int order = 1)
+            : FiniteElement<LagrangeShapeFunction, ElementTransform>(dim, dim, order)
+        {
+        }
 
-	LinearForm(FESpaceBase<T>* fe_space) : fe_space(fe_space) { };
+        virtual ~LagrangeElement() = default;
 
-	void addIntegrator(std::unique_ptr<LinearFormIntegrator> integrator)
-	{
-		integrators.push_back(std::move(integrator));
-	}
+        int numLocalDOFs() const override {
+            return this->shape_function.N(Point()).size();
+        }
 
-	void Assemble(Assembler<T>& assem)
-	{
-		for (const auto& entity : fe_space->getMesh()->getEntities())
-		{
-			for (auto& integrator : integrators)
-			{
-				integrator->evaluate(*entity, assem);
-			}
-		}
-	}
-
-protected:
-	FESpaceBase<T>* fe_space;
-	std::list<std::unique_ptr<LinearFormIntegrator>> integrators;
-
-};
+    private:
+    
+    };
+}

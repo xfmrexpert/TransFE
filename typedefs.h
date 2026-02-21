@@ -18,8 +18,24 @@
 #include "./Eigen/Dense"
 #include "./Eigen/Sparse"
 #include "./Eigen/IterativeLinearSolvers"
-//#include "vector.h"
-//#include "matrix.h"
+#include <complex>
+#include <memory>
+#include <iostream>
+
+#ifdef NDEBUG
+    #define TFEM_ASSERT(condition, message) ((void)0)
+#else
+    #define TFEM_ASSERT(condition, message) \
+        do { \
+            if (!(condition)) { \
+                std::cerr << "Assertion `" #condition "` failed in " << __FILE__ \
+                          << " line " << __LINE__ << ": " << message << std::endl; \
+                std::terminate(); \
+            } \
+        } while (false)
+#endif
+
+using point = Eigen::Matrix<double, 3, 1>;
 
 template <typename T>
 using BigMatrix =  Eigen::SparseMatrix<T>;

@@ -1,0 +1,145 @@
+// Copyright (c) 2026 T. C. Raymond
+// SPDX-License-Identifier: MIT
+
+#pragma once
+#include <memory>
+#include "physics_solver.hpp"
+#include "coordinate_system.hpp"
+#include "diffusion_integrator.hpp"
+#include "input_parser.hpp"
+#include "lagrange_element.hpp"
+#include "fe_space.hpp"
+#include "principal_form.hpp"
+#include "linear_form.hpp"
+
+class ElectrostaticSolver : public PhysicsSolver {
+    enum class SolverType { Axisymmetric, Planar };
+    SolverType type = SolverType::Axisymmetric; 
+
+    // Primary Spaces
+    std::unique_ptr<TFEM::LagrangeElement> fe;
+    std::unique_ptr<TFEM::FiniteElementSpace> fespace;
+    std::unique_ptr<mfem::GridFunction> x; // Electric Potential (V)
+    
+    // Physics
+    std::unique_ptr<TFEM::Coefficient> epsilon_coeff;
+    std::unique_ptr<TFEM::LinearForm<double>> b;
+    
+    std::vector<int> ess_bdr;
+
+public:
+    ElectrostaticSolver(TFEM::Mesh &m, const json &c) : PhysicsSolver(m, c) {}
+    
+    void Setup() override {
+        // 1. Config & Logic
+        int order = config["simulation"].value("order", 1);
+        int dim = mesh.Dimension(); // Should be 2
+
+        std::string mode = config["simulation"].value("model_type", "axisymmetric");
+        type = (mode == "planar") ? SolverType::Planar : SolverType::Axisymmetric;
+
+        // 2. Spaces
+        fe = std::make_unique<TFEM::LagrangeElement>(order, dim);
+        fespace = std::make_unique<TFEM::FiniteElementSpace>(&mesh, fe.get());
+        x = std::make_unique<mfem::GridFunction>(fespace.get());
+        *x = 0.0;
+
+        // 3. Material Properties (Permittivity)
+        InputParser parser(config);
+        Vector<double> epsilon_values;
+        parser.SetupPermittivity(mesh, epsilon_values);
+        epsilon_coeff = std::make_unique<mfem::PWConstCoefficient>(epsilon_values);
+
+        // 4. Boundary Conditions
+        ess_bdr.resize(std::ranges::max(mesh.bdr_attributes), 0);
+
+        std::vector<std::pair<std::vector<int>, double>> bcs;
+        parser.SetupBoundaries(mesh, bcs);
+
+        // Validate that BCs don't create physical conflicts
+        //BoundaryConditionValidator validator(mesh, *fespace);
+        //validator.ValidateBoundaryConditions(bcs, false);  // Strict mode - reject conflicts
+
+        // Apply boundary conditions
+        for (const auto& [marker, val] : bcs) {
+            mfem::ConstantCoefficient val_coeff(val);
+            x->ProjectBdrCoefficient(val_coeff, marker);
+
+            for(int i=0; i<marker.Size(); i++) {
+                if(marker[i]) ess_bdr[i] = 1;
+            }
+        }
+
+        // 5. Linear Form (RHS)
+        b = std::make_unique<TFEM::LinearForm<double>>(fespace.get());
+        *b = 0.0;
+    }
+
+    void Run() override {
+        // 6. Assemble Stiffness Matrix
+        TFEM::PrincipalForm<double> a(fespace.get());
+
+        std::shared_ptr<TFEM::CoordinateSystem> coord_system;
+        if (type == SolverType::Axisymmetric) {
+            coord_system = std::make_shared<TFEM::Axisymmetric>();
+        }
+        else {
+            coord_system = std::make_shared<TFEM::Cartesian>();
+        }
+        a.AddDomainIntegrator(std::make_unique<TFEM::DiffusionIntegrator>(coord_system, fespace.get(), epsilon_coeff.get()));
+
+        a.Assemble();
+
+        // 7. Solve
+        mfem::OperatorPtr A;
+        mfem::Vector B, X;
+        std::vector<int> ess_tdof_list;
+        fespace->GetEssentialTrueDofs(ess_bdr, ess_tdof_list);
+
+        a.FormLinearSystem(ess_tdof_list, *x, *b, A, X, B);
+
+#ifdef MFEM_USE_SUITESPARSE
+        mfem::UMFPackSolver umf_solver;
+        umf_solver.Control[UMFPACK_PRL] = 1;
+        umf_solver.SetOperator(*A);
+        umf_solver.Mult(B, X);
+#else
+        InputParser parser(config);
+        mfem::GSSmoother M((mfem::SparseMatrix&)(*A));
+        mfem::PCG(*A, M, B, X, parser.GetSolverPrintLevel(),
+                  parser.GetSolverMaxIter(), parser.GetSolverTolerance(), 0.0);
+#endif
+
+        // Recover solution into GridFunction x
+        a.RecoverFEMSolution(X, *b, *x);
+    }
+    
+    void Save() override {
+        mfem::ParaViewDataCollection paraview("results_electrostatic", &mesh);
+        paraview.SetLevelsOfDetail(1);
+        paraview.RegisterField("V", x.get());
+
+        // Electric Field: E = -Grad(V)
+        mfem::L2_FECollection fec_l2(fec->GetOrder() - 1, mesh.Dimension());
+        
+        // Electric Field Vector Space
+        mfem::FiniteElementSpace fespace_l2_vec(&mesh, &fec_l2, mesh.Dimension());
+        mfem::GridFunction E(&fespace_l2_vec);
+
+        mfem::GradientGridFunctionCoefficient grad_x(x.get());
+        E.ProjectCoefficient(grad_x);
+        E *= -1.0;  // E = -Grad(V)
+
+        paraview.RegisterField("E", &E);
+
+        // Permittivity
+        mfem::FiniteElementSpace fespace_l2_scalar(&mesh, &fec_l2);
+        mfem::GridFunction eps_gf(&fespace_l2_scalar);
+        eps_gf.ProjectCoefficient(*epsilon_coeff);
+        paraview.RegisterField("Permittivity", &eps_gf);
+
+        paraview.SetCycle(0);
+        paraview.SetTime(0.0);
+        paraview.Save();
+    }
+};

@@ -32,7 +32,7 @@ public:
 
         const double sigma = entity.getClassification()->getAttribute("sigma");
 
-        double s_phys = quadData.ptPhys.x;
+        double r_phys = quadData.ptPhys.x;
 
         // At each quadrature point, we need dPhiPhys and detJ
         Matrix<double> dN_dx = quadData.dN_dx;
@@ -51,16 +51,17 @@ public:
 
         for (int i = 0; i < nDofs; i++)
         {
-            // partial derivatives wrt s,z
-            double dWs_i = dN_dx(i, 0); // partial wrt s
+            // partial derivatives wrt r,z
+            double dWr_i = dN_dx(i, 0); // partial wrt r
             double dWz_i = dN_dx(i, 1); // partial wrt z
 
             for (int j = 0; j < nDofs; j++)
             {
-                double dWs_j = dN_dx(j, 0);
+                double dWr_j = dN_dx(j, 0);
                 double dWz_j = dN_dx(j, 1);
                 
-                Ke(i, j) += (1 / mu) * (4 * s_phys * dWs_i * dWs_j + dWz_i * dWz_j) * detJ;
+                // TODO: Change this fuckery
+                Ke(i, j) += (1 / mu) * (4 * r_phys * dWr_i * dWr_j + dWz_i * dWz_j) * detJ;
 
             }
         }

@@ -1,0 +1,249 @@
+// Copyright (c) 2026 T. C. Raymond
+// SPDX-License-Identifier: MIT
+
+#pragma once
+
+#include "json.hpp" // nlohmann/json
+#include "constants.hpp"
+#include <fstream>
+#include <iostream>
+#include <unordered_map>
+#include <optional>
+#include <memory>
+#include <filesystem> // C++17
+#include <ranges>
+#include "Mesh/mesh.h"
+#include "typedefs.h"
+
+using json = nlohmann::json;
+namespace fs = std::filesystem;
+
+class InputParser {
+    std::unique_ptr<json> owned_config;
+
+public:
+    const json& config;
+    std::string config_dir;
+
+    InputParser(const std::string &filename)
+        : owned_config(std::make_unique<json>()),
+          config(*owned_config) {
+        std::ifstream f(filename);
+        if (!f.is_open()) {
+            throw std::runtime_error("Could not open config file: " + filename);
+        }
+        f >> *owned_config;
+
+        // Store directory of config file
+        fs::path p(filename);
+        config_dir = p.parent_path().string();
+        if (config_dir.empty()) config_dir = ".";
+    }
+
+    // Allow construction from existing json
+    InputParser(const json& c) : config(c), config_dir(".") {}
+    InputParser(json&&) = delete;
+
+    // Get solver parameters with defaults
+    [[nodiscard]] double GetSolverTolerance() const {
+        if (config.contains("simulation") && config["simulation"].is_object() &&
+            config["simulation"].contains("solver_tolerance")) {
+            return config["simulation"]["solver_tolerance"];
+        }
+        return Constants::DEFAULT_SOLVER_TOLERANCE;
+    }
+
+    [[nodiscard]] int GetSolverMaxIter() const {
+        if (config.contains("simulation") && config["simulation"].is_object() &&
+            config["simulation"].contains("solver_max_iter")) {
+            return config["simulation"]["solver_max_iter"];
+        }
+        return Constants::DEFAULT_SOLVER_MAX_ITER;
+    }
+
+    [[nodiscard]] int GetSolverPrintLevel() const {
+        if (config.contains("simulation") && config["simulation"].is_object() &&
+            config["simulation"].contains("solver_print_level")) {
+            return config["simulation"]["solver_print_level"];
+        }
+        return Constants::DEFAULT_SOLVER_PRINT_LEVEL;
+    }
+    
+    [[nodiscard]] std::string GetMeshPath() {
+        std::string mesh_path;
+
+        if (config.contains("simulation") && config["simulation"].is_object() &&
+            config["simulation"].contains("mesh")) {
+            mesh_path = config["simulation"]["mesh"];
+            fs::path p(mesh_path);
+
+            // If path is absolute, use it directly
+            if (p.is_absolute()) {
+                mesh_path = p.string();
+            } else {
+                // Otherwise, make it relative to the config file location
+                mesh_path = (fs::path(config_dir) / p).string();
+            }
+        } else {
+            mesh_path = "default.msh";
+        }
+
+        // Validate that the mesh file exists
+        if (!fs::exists(mesh_path)) {
+            throw std::runtime_error("Mesh file not found: " + mesh_path);
+        }
+
+        return mesh_path;
+    }
+
+    // --------------------------------------------------------
+    // Material Setup (Reluctivity nu = 1/mu) for Magnetostatics
+    // --------------------------------------------------------
+    void SetupReluctivity(TFEM::Mesh &mesh, Vector<double> &nu_values) {
+        int max_attr = std::ranges::max(mesh.attributes);
+        // PWConstCoefficient expects index = attr - 1
+        // So we need exactly max_attr entries.
+        nu_values.resize(max_attr);
+        nu_values = Vector<double>::Constant(1.0 / Constants::MU_0); // Default nu0 (air)
+
+        if (config.contains("materials")) {
+            for (auto &mat : config["materials"]) {
+                if (mat.contains("properties") && mat["properties"].contains("mu_r")) {
+                    double mu_r = mat["properties"]["mu_r"];
+                    double mu = mu_r * Constants::MU_0;
+                    double nu = 1.0 / mu;
+
+                    for (int attr : mat["attributes"]) {
+                        // Protect against out-of-bounds keys
+                        if (attr > 0 && attr <= max_attr) {
+                            nu_values[attr - 1] = nu;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --------------------------------------------------------
+    // Material Setup (Conductivity) for Magnetoquasistatics
+    // --------------------------------------------------------
+    void SetupConductivity(TFEM::Mesh &mesh, Vector<double> &sigma_values) {
+        int max_attr = std::ranges::max(mesh.attributes);
+        sigma_values.resize(max_attr);
+        sigma_values = Vector<double>::Zero(); 
+
+        if (config.contains("materials")) {
+            for (auto &mat : config["materials"]) {
+                if (mat.contains("properties") && mat["properties"].contains("sigma")) {
+                    double sigma = mat["properties"]["sigma"];
+
+                    for (int attr : mat["attributes"]) {
+                        if (attr > 0 && attr <= max_attr) {
+                            sigma_values[attr - 1] = sigma;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --------------------------------------------------------
+    // Material Setup (Permittivity epsilon) for Electrostatics
+    // --------------------------------------------------------
+    void SetupPermittivity(TFEM::Mesh &mesh, Vector<double> &eps_values) {
+        int max_attr = std::ranges::max(mesh.attributes);
+        eps_values.resize(max_attr);
+        eps_values = Vector<double>::Constant(1.0); 
+
+        if (config.contains("materials")) {
+            for (auto &mat : config["materials"]) {
+                if (mat.contains("properties") && mat["properties"].contains("epsilon_r")) {
+                    double eps_r = mat["properties"]["epsilon_r"];
+
+                    for (int attr : mat["attributes"]) {
+                        if (attr > 0 && attr <= max_attr) {
+                            eps_values[attr - 1] = eps_r;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --------------------------------------------------------
+    // Boundary Conditions
+    // --------------------------------------------------------
+    struct BoundaryCondition {
+        std::string type;      // "Dirichlet", "Neumann", "Robin"
+        std::vector<int> marker;
+        double value;
+        double robin_coeff;    // For Robin BCs: alpha * u + beta * du/dn = value
+
+        BoundaryCondition(const std::string& t, const std::vector<int>& m, double v, double rc = 0.0)
+            : type(t), marker(m), value(v), robin_coeff(rc) {}
+    };
+
+    void SetupBoundaries(TFEM::Mesh &mesh, std::vector<std::pair<std::vector<int>, double>> &dirichlet_bcs) {
+
+        int max_bdr = std::ranges::max(mesh.bdr_attributes);
+
+        if (config.contains("boundaries")) {
+            for (auto &bc : config["boundaries"]) {
+                if (bc["type"] == "Dirichlet") {
+                    std::vector<int> marker = std::vector(max_bdr, 0);
+                    double val = bc["value"];
+
+                    for (int attr : bc["attributes"]) {
+                        if (attr > 0 && attr <= max_bdr) marker[attr - 1] = 1;
+                    }
+                    dirichlet_bcs.push_back({marker, val});
+                }
+                // Neumann and Robin BCs are stored but not yet fully implemented in solvers
+                // This provides the infrastructure for future implementation
+            }
+        }
+    }
+
+    // Extended version that handles all boundary types
+    void SetupAllBoundaries(TFEM::Mesh &mesh, std::vector<BoundaryCondition> &all_bcs) {
+
+        int max_bdr = std::ranges::max(mesh.bdr_attributes);;
+
+        if (config.contains("boundaries")) {
+            for (auto &bc : config["boundaries"]) {
+                std::string bc_type = bc["type"];
+                std::vector<int> marker = std::vector(max_bdr, 0);
+                double val = bc["value"];
+                double robin_coeff = bc.value("robin_coefficient", 1.0);
+
+                for (int attr : bc["attributes"]) {
+                    if (attr > 0 && attr <= max_bdr) marker[attr - 1] = 1;
+                }
+
+                all_bcs.emplace_back(bc_type, marker, val, robin_coeff);
+            }
+        }
+    }
+
+    // --------------------------------------------------------
+    // Sources (Current Density J)
+    // --------------------------------------------------------
+    void SetupSources(TFEM::Mesh &mesh, Vector<double> &j_values) {
+        int max_attr = std::ranges::max(mesh.attributes);
+        j_values.resize(max_attr);
+        j_values = Vector<double>::Zero(); 
+
+        if (config.contains("sources")) {
+            for (auto &src : config["sources"]) {
+                if (src["type"] == "CurrentDensity") {
+                    double val = src["value"];
+                    for (int attr : src["attributes"]) {
+                        if (attr > 0 && attr <= max_attr) {
+                            j_values[attr - 1] = val;
+                        }
+                    }
+                }
+            }
+        }
+    }
+};

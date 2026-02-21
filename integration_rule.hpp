@@ -13,44 +13,17 @@
  ***************************************************************************/
 
 #pragma once
-#include "FiniteElement.h"
-#include "ElementTransform.h"
-#include "AxiElementTransform.h"
+#include <vector>
+#include "Mesh/point.h"
+#include "typedefs.h"
 
- /// Lagrange finite element (scalar, H^1 conforming).
-class LagrangeElement : public FiniteElement<LagrangeShapeFunction, ElementTransform>
+namespace TFEM
 {
-public:
-    LagrangeElement(size_t dim, int order = 1)
-        : FiniteElement<LagrangeShapeFunction, ElementTransform>(dim, dim, order)
-    {
-    }
+	class IntegrationRule {
+	public:
+		virtual const std::vector<Point>& IntPts() const = 0;
+		virtual const Vector<double>& Weights() const = 0;
+		virtual int numIntPts() const = 0;
 
-    virtual ~LagrangeElement() = default;
-
-    size_t numLocalDOFs() const override {
-        return this->shape_function.N(point()).size();
-    }
-
-private:
-   
-};
-
-/// Axisymmetric Lagrange finite element (scalar, H^1 conforming).
-class AxiLagrangeElement : public FiniteElement<LagrangeShapeFunction, AxiElementTransform>
-{
-public:
-    AxiLagrangeElement(int order = 1)
-        : FiniteElement<LagrangeShapeFunction, AxiElementTransform>(2, 2, order)
-    {
-    }
-
-    virtual ~AxiLagrangeElement() = default;
-
-    size_t numLocalDOFs() const override {
-        return this->shape_function.N(point()).size();
-    }
-
-private:
-
-};
+	};
+}

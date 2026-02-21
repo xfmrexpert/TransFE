@@ -1,0 +1,66 @@
+/***************************************************************************
+ *   Copyright (C) 2005-2025 by T. C. Raymond                              *
+ *   tcraymond@inductivereasoning.com                                      *
+ *                                                                         *
+ *   Use of this source code is governed by an MIT-style                   *
+ *   license that can be found in the LICENSE.txt file or at               *
+ *   https://opensource.org/licenses/MIT.                                  *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                  *
+ *                                                                         *
+ ***************************************************************************/
+
+#pragma once
+
+#include "typedefs.h"
+#include "fe_space.hpp"
+#include "element_transform.hpp"
+#include "integration_rule.hpp"
+#include "assembler.h"
+
+namespace TFEM
+{
+    class LinearFormIntegrator
+    {
+    public:
+        LinearFormIntegrator(FESpaceBase<double>* feSpace) : feSpace(feSpace) { };
+        ~LinearFormIntegrator() = default;
+
+        virtual Vector<double> evaluatePt(Point ptRef, const FiniteElementBase& fe, const CellView& entity, const ElementQuadratureData& quadData) const = 0;
+        
+        void evaluate(CellView& entity, Assembler<double>& assem) const
+        {
+            const auto& fe = feSpace->getFiniteElement();
+            size_t nDofs = fe->numLocalDOFs();
+
+            Vector<double> f = Vector<double>::Zero(nDofs);
+
+            const auto& integration = feSpace->getIntegrationRule();
+
+            const auto& quadPointsRef = integration->IntPts();
+            const auto& quadWeights = integration->Weights();
+
+            const auto& element_data = feSpace->computeElementData(entity);
+
+            // For each quadrature point in the reference domain
+            for (size_t q = 0; q < integration->numIntPts(); q++)
+            {
+                Point ptRef = quadPointsRef[q];
+                double wq = quadWeights(q);
+
+                f = f + evaluatePt(ptRef, *fe, entity, element_data.quadData[q]) * wq;
+
+            }
+            //std::cout << "Adding force contributor:\n";
+            //std::cout << f;
+            const auto& DOFs = feSpace->getDOFsForEntity(entity);
+            assem.accept(f, DOFs);
+        };
+
+    protected:
+        FESpaceBase<double>* feSpace;
+
+    };
+}

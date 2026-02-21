@@ -12,8 +12,8 @@
 
 #include "constraint.h"
 #include "assembler.h"
-#include "BilinearForm.h"
-#include "LinearForm.h"
+#include "principal_form.hpp"
+#include "linear_form.hpp"
 #include <list>
 
 /// This class represents a generic discrete system. 
