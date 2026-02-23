@@ -4,9 +4,10 @@ project(TransFE VERSION 0.1.0)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(raylib CONFIG REQUIRED)
-find_package(glfw3 CONFIG REQUIRED)
-find_package(OpenGL REQUIRED)
+# Optional dependencies for MeshViewer
+find_package(raylib CONFIG QUIET)
+find_package(glfw3 CONFIG QUIET)
+find_package(OpenGL QUIET)
 find_package(Threads REQUIRED)
 
 include(CTest)
@@ -27,9 +28,13 @@ set(SOURCES ${ROOT_SOURCES} ${MESHDB_SOURCES} ${MESH_SOURCES})
 
 add_executable(TransFE ${SOURCES})
 
-# MeshViewer Application
-add_executable(MeshViewer MeshViewer/main.cpp ${MESH_SOURCES})
-target_link_libraries(MeshViewer PRIVATE raylib glfw OpenGL::GL Threads::Threads)
+# MeshViewer Application (only build if raylib is available)
+if(raylib_FOUND AND glfw3_FOUND AND OpenGL_FOUND)
+    add_executable(MeshViewer MeshViewer/main.cpp ${MESH_SOURCES})
+    target_link_libraries(MeshViewer PRIVATE raylib glfw OpenGL::GL Threads::Threads)
+else()
+    message(STATUS "MeshViewer will not be built (missing raylib, glfw3, or OpenGL)")
+endif()
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 

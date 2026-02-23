@@ -36,12 +36,49 @@ namespace TFEM
 
         // Access to the underlying finite element
         const FiniteElementBase* GetFiniteElement(CellView cell) const {
-            TFEM::GeometryType type = cell.type(); 
+            ElementType type = cell.Type();
         
             auto it = elements.find(type);
             if (it != elements.end()) {
                 return it->second.get();
             }
+            return nullptr;
+        }
+
+        // Retrieve or create the geometric transform for the given cell
+        const ElementTransform* GetElementTransform(const CellView& cell) const {
+            ElementType type = cell.Type();
+            size_t numNodes = cell.Nodes().size();
+
+            // Determine geometric order based on node count (heuristic)
+            int order = 1;
+            if ((type == ElementType::Triangle && numNodes > 3) ||
+                (type == ElementType::Quad && numNodes > 4) ||
+                (type == ElementType::Tetrahedron && numNodes > 4) ||
+                (type == ElementType::Hexahedron && numNodes > 8) ||
+                (type == ElementType::Segment && numNodes > 2)) {
+                order = 2;
+            }
+
+            // Check cache
+            std::pair<ElementType, int> key = { type, order };
+            auto it = transforms.find(key);
+            if (it != transforms.end()) {
+                return it->second.get();
+            }
+
+            // Create new transform
+            size_t nsd = mesh->SpaceDimension();
+            size_t npd = mesh->Dimension(); // Default to mesh dimension
+
+            // Refine parametric dimension based on element type
+            if (type == ElementType::Segment) npd = 1;
+            else if (type == ElementType::Point) npd = 0;
+            else if (type == ElementType::Triangle || type == ElementType::Quad) npd = 2;
+            else if (type == ElementType::Tetrahedron || type == ElementType::Hexahedron) npd = 3;
+
+            transforms[key] = std::make_unique<ElementTransform>(nsd, npd, order);
+            return transforms[key].get();
         }
 
         const Mesh* GetMesh() const { return mesh; }
@@ -56,6 +93,12 @@ namespace TFEM
     protected:
         const Mesh* mesh;
         const std::unique_ptr<FiniteElementBase> fe;
+
+        // Cache for finite elements: <ElementType, Order> -> Transform
+        mutable std::map<ElementType, std::unique_ptr<FiniteElementBase>> elements;
+
+        // Cache for element transforms: <ElementType, Order> -> Transform
+        mutable std::map<std::pair<ElementType, int>, std::unique_ptr<ElementTransform>> transforms;
 
         // Finalize the numbering (call after mesh is ready)
         void Setup()

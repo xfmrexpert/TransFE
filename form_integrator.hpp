@@ -22,13 +22,8 @@
 #include "element_transform.hpp"
 #include "integration_rule.hpp"
 
-template<typename Scalar = double>
-class FormIntegrator
+namespace TFEM
 {
-public:
-    using MatrixType = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
-    using VectorType = Eigen::Matrix<Scalar, Eigen::Dynamic, 1>;
-
     struct IntegrationPointData
     {
         Point ptPhys;                        // Physical coordinate (x,y,z)
@@ -37,59 +32,75 @@ public:
         const Vector<double>& N;             // Shape Function values
     };
 
-	FormIntegrator(std::shared_ptr<CoordinateSystem> cs, FiniteElementSpace* feSpace) : coords(cs), feSpace(feSpace) { };
-
-    virtual ~FormIntegrator() = default;
-
-    void evaluate(const FiniteElementBase& fe, TFEM::CellView cell, MatrixType& Ke)
+    template<typename Scalar = double>
+    class FormIntegrator
     {
-        int nDofs = fe->numLocalDOFs();
+    public:
+        using MatrixType = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
+        using VectorType = Eigen::Matrix<Scalar, Eigen::Dynamic, 1>;
 
-        Matrix<double> Ke = Matrix<double>::Zero(nDofs, nDofs);
+        FormIntegrator(std::shared_ptr<CoordinateSystem> cs, FiniteElementSpace* feSpace) : coords(cs), feSpace(feSpace) {};
 
-        const auto& integration = fe->getIntegrationRule();
+        virtual ~FormIntegrator() = default;
 
-        const auto& quadPointsRef = integration->IntPts();
-        const auto& quadWeights = integration->Weights();
-
-        // For each quadrature point in the reference domain
-        for (size_t q = 0; q < integration->numIntPts(); q++)
+        void evaluate(TFEM::CellView cell, MatrixType& Ke)
         {
-            IntegrationPointData int_data;
+            const auto* fe = feSpace->GetFiniteElement(cell);
+            int nDofs = fe->numLocalDOFs();
 
-            point ptRef = quadPointsRef[q];
+            // Resize and zero the output matrix
+            Ke.setZero(nDofs, nDofs);
 
-            // Transform: Reference Point -> Physical Point
-            int_data.ptPhys = fe.Transform()->mapReferencePointToPhysical(ptRef); // x(xi)
+            const auto* integration = fe.getIntegrationRule();
+            const auto& quadPointsRef = integration->IntPts();
+            const auto& quadWeights = integration->Weights();
 
-            // Calculate Jacobian and its Determinant
-            // J = dx/dxi
-            auto J = fe.Transform()->Jacobian(ptRef);
-            double detJ = J.determinant();
-            
-            // Calculate Physical Gradients
-            // dN/dx = J^{-T} * dN/dxi
-            auto JinvT = J.inverse().transpose();
-            auto dNdxi = fe.ShapeFunction()->Gradients(ptRef);
-            int_data.dNdx = dNdxi * JinvT; // Chain rule
+            // Retrieve geometric transform from FE Space
+            const auto* transform = feSpace->GetElementTransform(cell);
 
-            // Shape Function Values
-            int_data.N = fe.ShapeFunction()->Values(ptRef);
+            // For each quadrature point in the reference domain
+            for (size_t q = 0; q < integration->numIntPts(); q++)
+            {
+                IntegrationPointData int_data;
+                const Point& ptRef = quadPointsRef[q];
+                double wq = quadWeights[q];
 
-            // Compute Total Measure (Weight * DetJacobian * CoordinateSystems)
-            int_data.measure = wq * coords->measure(detJ, int_data.ptPhys);
+                // Transform: Reference Point -> Physical Point
+                int_data.ptPhys = transform->mapReferencePointToPhysical(ptRef, cell); // x(xi)
 
-            Ke += evaluatePt(int_data);
-        }
+                // Calculate Jacobian and its Determinant
+                // J = dx/dxi
+                auto J = transform->Jacobian(ptRef, cell);
+                double detJ = J.determinant();
+
+                // Calculate Physical Gradients
+                // dN/dx = dN/dxi * J^{-1}
+                // Transpose logic: dN/dx (row vectors) = (J^{-T} * (dN/dxi)^T)^T = dN/dxi * J^{-1}
+                // Eigen representation: shapeFunction->Gradients returns [dNi/dxi]
+                auto Jinv = J.inverse();
+                auto dNdxi = fe.ShapeFunction()->Gradients(ptRef);
+
+                // Assuming Gradients returns (nShape x nDim), we post-multiply by Jinv
+                int_data.dNdx = dNdxi * Jinv;
+
+                // Shape Function Values
+                int_data.N = fe.ShapeFunction()->Values(ptRef);
+
+                // Compute Total Measure (Weight * DetJacobian * CoordinateSystems)
+                int_data.measure = wq * coords->measure(detJ, int_data.ptPhys);
+
+                Ke += evaluatePt(int_data);
+            }
+        };
+
+
+    protected:
+        std::shared_ptr<CoordinateSystem> coords;
+        FiniteElementSpace* feSpace;
+
+        virtual MatrixType evaluatePt(const IntegrationPointData& data) const = 0;
     };
 
-
-protected:
-    std::shared_ptr<CoordinateSystem> coords;
-    FiniteElementSpace* feSpace;
-
-    virtual MatrixType evaluatePt(const IntegrationPointData& data) const = 0;
-};
-
-using BilinearFormIntegrator = FormIntegrator<double>;
-using SesquilinearFormIntegrator = FormIntegrator<std::complex<double>>;
+    using BilinearFormIntegrator = FormIntegrator<double>;
+    using SesquilinearFormIntegrator = FormIntegrator<std::complex<double>>;
+} // namespace TFEM

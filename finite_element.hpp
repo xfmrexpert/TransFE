@@ -36,18 +36,18 @@ namespace TFEM
     };
 
 
-    template <typename SF, typename ET>
-        requires std::derived_from<SF, ShapeFunction> && std::derived_from<ET, ElementTransform>
+    template <typename SF>
+        requires std::derived_from<SF, ShapeFunction>
     class FiniteElement : public FiniteElementBase {
 
     public:
-        FiniteElement(int spatial_dim, int ref_dim, int order = 1)
-            : shape_function(ref_dim, order), transform(std::make_unique<ET>(spatial_dim, ref_dim, order)) { };
+        FiniteElement(int ref_dim, int order = 1)
+            : shape_function(ref_dim, order) { };
 
         virtual ~FiniteElement() = default;
 
         int referenceDimensions() const override {
-            return transform->referenceDimensions();
+            return shape_function.referenceDimensions();
         }
 
         int numLocalDOFs() const override {

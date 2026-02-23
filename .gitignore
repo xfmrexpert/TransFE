@@ -47,3 +47,5 @@ build/
 
 # Project specific
 TransFE
+/.vs
+/vcpkg_installed
